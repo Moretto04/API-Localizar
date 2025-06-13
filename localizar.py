@@ -14,7 +14,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  #allow_origins=["https://seu-projeto.vercel.app"]
+    allow_origins=["https://medlocator-six.vercel.app"],  #allow_origins=["https://seu-projeto.vercel.app"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
