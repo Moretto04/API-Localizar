@@ -3,20 +3,32 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 import requests
 import mysql.connector
 import random
+import os
 
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  #allow_origins=["https://seu-projeto.vercel.app"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 def conectar_mysql():
     return mysql.connector.connect(
-        host="centerbeam.proxy.rlwy.net",
-        port=47834,
-        user="root",
-        password="LeDaSiyWdDlzDkhEhWDNwoDSOwuAudjO",
-        database="railway"
+        host=os.environ.get("MYSQL_HOST"),
+        port=int(os.environ.get("MYSQL_PORT", 3306)),
+        user=os.environ.get("MYSQL_USER"),
+        password=os.environ.get("MYSQL_PASSWORD"),
+        database=os.environ.get("MYSQL_DATABASE")
     )
+    
 
 def buscar_medicamentos():
     conn = conectar_mysql()
