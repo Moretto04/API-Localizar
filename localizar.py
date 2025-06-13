@@ -113,6 +113,10 @@ def buscar_postos_osm(lat, lon, raio_m=2000):
 # async def home(request: Request):
 #     return templates.TemplateResponse("index.html", {"request": request})
 
+@app.get("/")
+def root():
+    return {"mensagem": "API FastAPI rodando! Veja /docs para documentação."}
+
 @app.get("/postos_proximos")
 async def postos(lat: float, lon: float):
     try:
