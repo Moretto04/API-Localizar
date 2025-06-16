@@ -41,34 +41,25 @@ def usuario_eh_premium(usuario_id):
 def buscar_medicamentos(premium=False):
     conn = conectar_mysql()
     cursor = conn.cursor(dictionary=True)
-
     cursor.execute("SELECT nome, tipo_medicamento, quantidade FROM medicamentos")
     todos = cursor.fetchall()
+    conn.close()
+
+    if not todos:
+        return []
 
     if not premium:
-        # Seleciona uma quantidade aleatória de vacinas (tipo 20)
+        # Não-premium recebem apenas vacinas (tipo 20), número aleatório
         vacinas = [m for m in todos if m['tipo_medicamento'] == 20]
         n_vacinas = random.randint(1, len(vacinas)) if vacinas else 0
         selecionados = random.sample(vacinas, n_vacinas) if n_vacinas else []
-        conn.close()
         return selecionados
 
-    tipo_20 = [m for m in todos if m['tipo_medicamento'] == 20]
-    outros = [m for m in todos if m['tipo_medicamento'] != 20]
-
-    if not tipo_20:
-        tipo_20_escolhido = []
-    else:
-        tipo_20_escolhido = [random.choice(tipo_20)]
-
-    n_outros = random.randint(0, 9)
-    outros_escolhidos = random.sample(outros, min(n_outros, len(outros)))
-
-    selecionados = tipo_20_escolhido + outros_escolhidos
-    random.shuffle(selecionados)
-
-    conn.close()
+    # Premium: seleciona aleatoriamente entre todos os medicamentos (inclusive vacinas)
+    n_meds = random.randint(5, min(15, len(todos)))  # Entre 5 e 15 medicamentos
+    selecionados = random.sample(todos, n_meds)
     return selecionados
+
 
 def buscar_postos_osm(lat, lon, premium=False, raio_m=2000):
     overpass_url = "http://overpass-api.de/api/interpreter"
@@ -163,3 +154,5 @@ def geocode_cep(cep: str):
     lat = nominatim[0]["lat"]
     lon = nominatim[0]["lon"]
     return {"lat": lat, "lon": lon}
+
+
