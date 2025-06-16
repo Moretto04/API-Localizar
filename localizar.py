@@ -46,8 +46,10 @@ def buscar_medicamentos(premium=False):
     todos = cursor.fetchall()
 
     if not premium:
-        # Apenas vacinas (tipo 20) para não premium
-        selecionados = [m for m in todos if m['tipo_medicamento'] == 20]
+        # Seleciona uma quantidade aleatória de vacinas (tipo 20)
+        vacinas = [m for m in todos if m['tipo_medicamento'] == 20]
+        n_vacinas = random.randint(1, len(vacinas)) if vacinas else 0
+        selecionados = random.sample(vacinas, n_vacinas) if n_vacinas else []
         conn.close()
         return selecionados
 
