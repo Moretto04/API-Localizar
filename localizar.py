@@ -13,7 +13,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://medlocator-six.vercel.app"],
+    allow_origins=["https://medlocator-six.vercel.app"],  #allow_origins=["https://seu-projeto.vercel.app"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,17 +27,7 @@ def conectar_mysql():
         password=os.environ.get("MYSQL_PASSWORD"),
         database=os.environ.get("MYSQL_DATABASE")
     )
-
-def usuario_eh_premium(usuario_id):
-    if not usuario_id:
-        return False
-    conn = conectar_mysql()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT premium FROM usuarios WHERE id = %s", (usuario_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return row and row.get("premium") == 1
-
+    
 def buscar_medicamentos(premium=False):
     conn = conectar_mysql()
     cursor = conn.cursor(dictionary=True)
@@ -45,23 +35,23 @@ def buscar_medicamentos(premium=False):
     todos = cursor.fetchall()
     conn.close()
 
-    if not todos:
-        return []
+    vacinas = [m for m in todos if int(m['tipo_medicamento']) == 20]
+    outros = [m for m in todos if int(m['tipo_medicamento']) != 20]
 
-    if not premium:
-        # Não-premium recebem apenas vacinas (tipo 20), número aleatório
-        vacinas = [m for m in todos if m['tipo_medicamento'] == 20]
-        n_vacinas = random.randint(1, len(vacinas)) if vacinas else 0
+    if premium:
+        todos_meds = vacinas + outros
+        n_total = min(len(todos_meds), 15)
+        n_sorteio = random.randint(0, n_total)
+        selecionados = random.sample(todos_meds, n_sorteio) if n_sorteio else []
+    else:
+        n_vacinas = random.randint(0, len(vacinas)) if vacinas else 0
         selecionados = random.sample(vacinas, n_vacinas) if n_vacinas else []
-        return selecionados
 
-    # Premium: seleciona aleatoriamente entre todos os medicamentos (inclusive vacinas)
-    n_meds = random.randint(5, min(15, len(todos)))  # Entre 5 e 15 medicamentos
-    selecionados = random.sample(todos, n_meds)
+    random.shuffle(selecionados)
     return selecionados
 
-
-def buscar_postos_osm(lat, lon, premium=False, raio_m=2000):
+# Raio grande o suficiente para buscar vários estabelecimentos (~2 km)
+def buscar_postos_osm(lat, lon, raio_m=2000, premium=False):
     overpass_url = "http://overpass-api.de/api/interpreter"
     query = f"""
     [out:json];
@@ -92,7 +82,6 @@ def buscar_postos_osm(lat, lon, premium=False, raio_m=2000):
 
     for el in dados.get("elements", []):
         nome = el["tags"].get("name", "UBS sem nome")
-
         if "lat" in el and "lon" in el:
             lat_post = el["lat"]
             lon_post = el["lon"]
@@ -103,28 +92,37 @@ def buscar_postos_osm(lat, lon, premium=False, raio_m=2000):
             continue
 
         medicamentos = buscar_medicamentos(premium=premium)
-
         postos.append({
             "nome": nome,
             "lat": lat_post,
             "lon": lon_post,
             "medicamentos": medicamentos
         })
-
     return postos
+
+# @app.get("/", response_class=HTMLResponse)
+# async def home(request: Request):
+#     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/")
 def root():
     return {"mensagem": "API FastAPI rodando! Veja /docs para documentação."}
 
 @app.get("/postos_proximos")
-async def postos(lat: float, lon: float, usuario_id: int = None):
+async def postos(lat: float, lon: float, request: Request):
     try:
-        premium = usuario_eh_premium(usuario_id)
+        email = request.headers.get("x-user-email")
+        premium = False
+        if email and email not in ("undefined", "null", ""):
+            conn = conectar_mysql()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT premium FROM usuarios WHERE email = %s", (email,))
+            user = cursor.fetchone()
+            conn.close()
+            if user and bool(user.get("premium")):
+                premium = True
+
         resultados = buscar_postos_osm(lat, lon, premium=premium)
-        print(f"Total encontrados: {len(resultados)}")
-        for p in resultados:
-            print(p)
         return JSONResponse(content=resultados)
     except Exception as e:
         print("Erro:", e)
@@ -132,12 +130,17 @@ async def postos(lat: float, lon: float, usuario_id: int = None):
 
 @app.get("/geocode_cep")
 def geocode_cep(cep: str):
+    # 1. Busca endereço pelo CEP (ViaCEP)
     viacep = requests.get(f"https://viacep.com.br/ws/{cep}/json/").json()
     if "erro" in viacep:
         return {"erro": "CEP não encontrado"}
     logradouro = viacep.get("logradouro", "")
+    # bairro = viacep.get("bairro", "")
+    # localidade = viacep.get("localidade", "")
+    # uf = viacep.get("uf", "")
 
-    endereco = f"{logradouro}"
+    # 2. Usa Nominatim para geocodificar o endereço com User-Agent
+    endereco = f"{logradouro}" # {bairro}, {localidade}, {uf}, Brasil
     response = requests.get(
         "https://nominatim.openstreetmap.org/search",
         params={"q": endereco, "format": "json"},
@@ -154,5 +157,4 @@ def geocode_cep(cep: str):
     lat = nominatim[0]["lat"]
     lon = nominatim[0]["lon"]
     return {"lat": lat, "lon": lon}
-
 
