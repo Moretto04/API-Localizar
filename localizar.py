@@ -9,12 +9,11 @@ import mysql.connector
 import random
 import os
 
-
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://medlocator-six.vercel.app"],  #allow_origins=["https://seu-projeto.vercel.app"]
+    allow_origins=["https://medlocator-six.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,14 +27,29 @@ def conectar_mysql():
         password=os.environ.get("MYSQL_PASSWORD"),
         database=os.environ.get("MYSQL_DATABASE")
     )
-    
 
-def buscar_medicamentos():
+def usuario_eh_premium(usuario_id):
+    if not usuario_id:
+        return False
+    conn = conectar_mysql()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT premium FROM usuarios WHERE id = %s", (usuario_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row and row.get("premium") == 1
+
+def buscar_medicamentos(premium=False):
     conn = conectar_mysql()
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("SELECT nome, tipo_medicamento, quantidade FROM medicamentos")
     todos = cursor.fetchall()
+
+    if not premium:
+        # Apenas vacinas (tipo 20) para não premium
+        selecionados = [m for m in todos if m['tipo_medicamento'] == 20]
+        conn.close()
+        return selecionados
 
     tipo_20 = [m for m in todos if m['tipo_medicamento'] == 20]
     outros = [m for m in todos if m['tipo_medicamento'] != 20]
@@ -54,10 +68,7 @@ def buscar_medicamentos():
     conn.close()
     return selecionados
 
-
-
-# Raio grande o suficiente para buscar vários estabelecimentos (~2 km)
-def buscar_postos_osm(lat, lon, raio_m=2000):
+def buscar_postos_osm(lat, lon, premium=False, raio_m=2000):
     overpass_url = "http://overpass-api.de/api/interpreter"
     query = f"""
     [out:json];
@@ -98,7 +109,7 @@ def buscar_postos_osm(lat, lon, raio_m=2000):
         else:
             continue
 
-        medicamentos = buscar_medicamentos()  
+        medicamentos = buscar_medicamentos(premium=premium)
 
         postos.append({
             "nome": nome,
@@ -109,18 +120,15 @@ def buscar_postos_osm(lat, lon, raio_m=2000):
 
     return postos
 
-# @app.get("/", response_class=HTMLResponse)
-# async def home(request: Request):
-#     return templates.TemplateResponse("index.html", {"request": request})
-
 @app.get("/")
 def root():
     return {"mensagem": "API FastAPI rodando! Veja /docs para documentação."}
 
 @app.get("/postos_proximos")
-async def postos(lat: float, lon: float):
+async def postos(lat: float, lon: float, usuario_id: int = None):
     try:
-        resultados = buscar_postos_osm(lat, lon)
+        premium = usuario_eh_premium(usuario_id)
+        resultados = buscar_postos_osm(lat, lon, premium=premium)
         print(f"Total encontrados: {len(resultados)}")
         for p in resultados:
             print(p)
@@ -131,17 +139,12 @@ async def postos(lat: float, lon: float):
 
 @app.get("/geocode_cep")
 def geocode_cep(cep: str):
-    # 1. Busca endereço pelo CEP (ViaCEP)
     viacep = requests.get(f"https://viacep.com.br/ws/{cep}/json/").json()
     if "erro" in viacep:
         return {"erro": "CEP não encontrado"}
     logradouro = viacep.get("logradouro", "")
-    # bairro = viacep.get("bairro", "")
-    # localidade = viacep.get("localidade", "")
-    # uf = viacep.get("uf", "")
 
-    # 2. Usa Nominatim para geocodificar o endereço com User-Agent
-    endereco = f"{logradouro}" # {bairro}, {localidade}, {uf}, Brasil
+    endereco = f"{logradouro}"
     response = requests.get(
         "https://nominatim.openstreetmap.org/search",
         params={"q": endereco, "format": "json"},
@@ -158,7 +161,3 @@ def geocode_cep(cep: str):
     lat = nominatim[0]["lat"]
     lon = nominatim[0]["lon"]
     return {"lat": lat, "lon": lon}
-
-
-
-
